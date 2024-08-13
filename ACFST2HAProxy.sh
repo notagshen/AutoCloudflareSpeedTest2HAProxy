@@ -7,7 +7,6 @@ STcount=6 #测速数量
 speedlower=8  #自定义下载速度下限,单位为mb/s
 STmax=230 #测速延迟允许的最大上限
 ###############################################################以下脚本内容，勿动#######################################################################
-HAProxyport=9000 #HAProxy负载均衡端口,默认9000
 speedqueue_max=2 #自定义测速IP冗余量
 lossmax=0.75  #自定义丢包几率上限；只输出低于/等于指定丢包率的 IP，范围 0.00~1.00，0 过滤掉任何丢包的 IP
 speedtestMB=50 #测速文件大小 单位MB，文件过大会拖延测试时长，过小会无法测出准确速度
@@ -61,7 +60,7 @@ update_gengxinzhi=0
 apt_update() {
     if [ "$update_gengxinzhi" -eq 0 ]; then
 		
-		if [ "$Ubuntu" -eq 1 ]; then
+		if [ "$Ubuntu" -eq 1 ];then
 			sudo apt update
 		else
 			opkg update
@@ -78,7 +77,7 @@ apt_install() {
 		echo "$1 未安装，开始安装..."
 		apt_update
 		
-		if [ "$Ubuntu" -eq 1 ]; then
+		if [ "$Ubuntu" -eq 1 ];then
 			sudo apt install "$1" -y
 		else
 			opkg install "$1"
@@ -92,7 +91,6 @@ apt_install() {
 
 apt_install curl
 apt_install jq
-apt_install haproxy
 
 download_CloudflareST() {
     # 发送 API 请求获取仓库信息（替换 <username> 和 <repo>）
@@ -144,18 +142,17 @@ download_file() {
 }
 
 download_file ip.txt
-download_file haproxy.cfg.bk
 
 speedurlhttp="http://"  # 默认为http
 for p in "${ports[@]}"; do
-  if [ "$port" -eq "$p" ]; then
+  if [ "$port" -eq "$p" ];then
     speedurlhttp="https://"
     break  # 找到匹配的端口后可以提前结束循环
   fi
 done
 
 # 检测log文件夹是否存在
-if [ ! -d "log" ]; then
+if [ ! -d "log" ];then
   mkdir -p "log"
 fi
 
@@ -165,7 +162,7 @@ local_IP_geo=$(curl -m 10 -s http://ip-api.com/json/${local_IP}?lang=zh-CN)
 # 使用jq解析JSON响应并提取所需的信息
 status=$(echo "$local_IP_geo" | jq -r '.status')
 
-if [ "$status" = "success" ]; then
+if [ "$status" = "success" ];then
     countryCode=$(echo "$local_IP_geo" | jq -r '.countryCode')
     country=$(echo "$local_IP_geo" | jq -r '.country')
     regionName=$(echo "$local_IP_geo" | jq -r '.regionName')
@@ -173,7 +170,7 @@ if [ "$status" = "success" ]; then
     # 如果status等于success，则显示地址信息
     # echo "您的地址是 ${country}${regionName}${city}"
     # 判断countryCode是否等于CN
-    if [ "$countryCode" != "CN" ]; then
+    if [ "$countryCode" != "CN" ];then
         echo "你的IP地址是 $local_IP ${country}${regionName}${city} 经确认本机网络使用了代理，请关闭代理后重试。"
         exit 1  # 在不是中国的情况下强行退出脚本
     else
@@ -187,66 +184,8 @@ speedurl=${speedurlhttp}${speedurl}
 result_csv="log/${port}.csv"
 Require="测速端口${port}, 需求${STcount}个优选IP, 下载速度至少${speedlower}mb/s, 延迟不超过${STmax}ms"
 echo $Require
-#./CloudflareST -tp 80 -url http://speed.cloudflare.com/__down?bytes=90000000 -dn 10 -tl 280 -p 0 -sl 10
 ./CloudflareST -tp $port -url $speedurl -dn $((STcount + speedqueue_max)) -tl $STmax -tlr $lossmax -p 0 -sl $speedlower -o $result_csv
 
-if [ -f "haproxy.cfg" ]; then
-  echo "haproxy.cfg 文件已存在，删除后重新配置"
-  rm "haproxy.cfg"
-fi
-
-cp "haproxy.cfg.bk" "haproxy.cfg"
-echo -e "listen ${HAProxyport}\n    mode tcp\n    bind 0.0.0.0:${HAProxyport}" >> haproxy.cfg
-
-# 创建临时文件并将要插入的内容写入临时文件
-tmpfile=$(mktemp)
-listenport=9001
-sed -n "2,$((STcount + 1))p" $result_csv | while read line
-do
-  echo -e "    server ${line%%,*}:${port} ${line%%,*}:${port} weight 5 check inter 1500 rise 1 fall 3 " >> haproxy.cfg
-  echo -e "listen ${listenport}\n    mode tcp\n    bind 0.0.0.0:${listenport}\n    server ${line%%,*}:${port} ${line%%,*}:${port} weight 5 check inter 1500 rise 1 fall 3 \n" >> "$tmpfile"
-  ((listenport++))
-done
-# 将临时文件的内容追加到 haproxy.cfg
-cat "$tmpfile" >> haproxy.cfg
-
-# 删除临时文件
-rm "$tmpfile"
-
-if [ "$Ubuntu" -eq 1 ]; then
-	sudo cp haproxy.cfg /etc/haproxy/
-else
-	cp haproxy.cfg /etc/
-fi
-
-# 检查haproxy服务的状态
-service haproxy status >/dev/null 2>&1
-clear
-# 检查服务的返回状态码
-if [ $? -eq 0 ]; then
-    echo "HAProxy服务正在运行，重启服务"
-	service haproxy restart
-else
-    echo "HAProxy服务没有运行，启动服务"
-	service haproxy start
-fi
-
-# 检查haproxy服务的状态
-service haproxy status >/dev/null 2>&1
-
-LocalIP=$(ip addr show | grep "inet " | grep -v 127.0.0.1 | grep -v "inet 172.17." | awk '{print $2}' | cut -d '/' -f 1 | head -n 1)
-
-# 检查服务的返回状态码
-if [ $? -eq 0 ]; then
-  #clear
-  echo "CloudflareSpeedTest 测速任务完成"
-  echo $Require
-  echo "HAProxy负载均衡 启动成功"
-  echo "负载均衡详细信息面板 http://${LocalIP}:8999"
-  echo "负载均衡IP端口: ${LocalIP}:${HAProxyport}"
-  listenport=9001
-  for ((i = 1; i <= STcount; i++)); do
-    echo "${i}号优选IP端口: ${LocalIP}:${listenport}"
-	((listenport++))
-  done
-fi
+echo "CloudflareSpeedTest 测速任务完成"
+echo $Require
+echo "测速结果已保存到 ${result_csv}"
