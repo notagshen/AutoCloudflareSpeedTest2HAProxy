@@ -137,7 +137,7 @@ download_file() {
     echo "$file_name 准备就绪。"
   else
     echo "$file_name 未准备就绪，正在下载 ..."
-    curl -o "$file_name" "${proxygithub}https://raw.githubusercontent.com/cmliu/AutoCloudflareSpeedTest2HAProxy/main/$file_name"
+    curl -o "$file_name" "${proxygithub}https://raw.githubusercontent.com/notagshen/AutoCloudflareSpeedTest2HAProxy/main/$file_name"
   fi
 }
 
